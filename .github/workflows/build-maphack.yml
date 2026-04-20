@@ -2,9 +2,7 @@ name: Build MLBB Map Hack
 
 on:
   push:
-    paths:
-      - 'mlbb_analysis/maphack_src/**'
-      - '.github/workflows/build-maphack.yml'
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -15,22 +13,12 @@ jobs:
 
     - name: Build dylib
       run: |
-        cd mlbb_analysis/maphack_src
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        clang \
-          -arch arm64 \
-          -isysroot $SDK \
-          -miphoneos-version-min=14.0 \
-          -fobjc-arc \
-          -dynamiclib \
-          -framework UIKit \
-          -framework Foundation \
-          -o maphack.dylib \
-          maphack.m
-        echo "Size: $(wc -c < maphack.dylib) bytes"
+        clang -arch arm64 -isysroot $SDK -miphoneos-version-min=14.0 -fobjc-arc -dynamiclib -framework UIKit -framework Foundation -o maphack.dylib mlbb_analysis/maphack_src/maphack.m
+        ls -lh maphack.dylib
         file maphack.dylib
 
     - uses: actions/upload-artifact@v4
       with:
         name: maphack-dylib
-        path: mlbb_analysis/maphack_src/maphack.dylib
+        path: maphack.dylib
