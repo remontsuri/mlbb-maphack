@@ -1,23 +1,18 @@
 name: Build MLBB Map Hack
-
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-13
     steps:
     - uses: actions/checkout@v4
-
     - name: Build dylib
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
         clang -arch arm64 -isysroot $SDK -miphoneos-version-min=14.0 -fobjc-arc -dynamiclib -framework UIKit -framework Foundation -o maphack.dylib mlbb_analysis/maphack_src/maphack.m
         ls -lh maphack.dylib
-        file maphack.dylib
-
     - uses: actions/upload-artifact@v4
       with:
         name: maphack-dylib
