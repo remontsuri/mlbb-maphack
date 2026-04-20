@@ -1,0 +1,9 @@
+build_task:
+  macos_instance:
+    image: ghcr.io/cirruslabs/macos-runner:sonoma
+  build_script:
+    - SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+    - clang -arch arm64 -isysroot $SDK -miphoneos-version-min=14.0 -fobjc-arc -dynamiclib -framework UIKit -framework Foundation -o maphack.dylib mlbb_analysis/maphack_src/maphack.m
+    - ls -lh maphack.dylib
+  binaries_artifacts:
+    path: maphack.dylib
