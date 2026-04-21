@@ -1,7 +1,6 @@
 /*
- * MLBB Map Hack - Jailed iOS (no jailbreak required)
- * Uses il2cpp API + UIView overlay
- * No MSHookFunction, no substrate
+ * MLBB Map Hack - Jailed iOS
+ * Uses il2cpp API + vm_remap for safe memory writes (same as Wraith/bennie)
  */
 
 #import <UIKit/UIKit.h>
@@ -9,6 +8,23 @@
 #include <dlfcn.h>
 #include <mach-o/dyld.h>
 #include <string.h>
+#include <mach/mach.h>
+
+static BOOL safeWrite(void* addr, uint8_t val) {
+    if (!addr || (uintptr_t)addr < 0x10000) return NO;
+    vm_address_t newAddr = 0;
+    vm_prot_t curProt, maxProt;
+    kern_return_t kr = vm_remap(mach_task_self(), &newAddr, 1, 0, VM_FLAGS_ANYWHERE,
+                                mach_task_self(), (vm_address_t)addr,
+                                FALSE, &curProt, &maxProt, VM_INHERIT_SHARE);
+    if (kr == KERN_SUCCESS) {
+        *(uint8_t*)newAddr = val;
+        vm_deallocate(mach_task_self(), newAddr, 1);
+    } else {
+        *(uint8_t*)addr = val;
+    }
+    return YES;
+}
 
 typedef void* Il2CppDomain;
 typedef void* Il2CppAssembly;
@@ -26,15 +42,15 @@ typedef size_t           (*fn_field_get_offset_t)(FieldInfo* field);
 typedef void*            (*fn_class_get_static_data_t)(Il2CppClass* klass);
 typedef void             (*fn_class_init_t)(Il2CppClass* klass);
 
-static fn_domain_get_t          g_domain_get;
+static fn_domain_get_t            g_domain_get;
 static fn_domain_get_assemblies_t g_domain_get_assemblies;
-static fn_assembly_get_image_t  g_assembly_get_image;
-static fn_image_get_name_t      g_image_get_name;
-static fn_class_from_name_t     g_class_from_name;
-static fn_class_get_field_t     g_class_get_field;
-static fn_field_get_offset_t    g_field_get_offset;
+static fn_assembly_get_image_t    g_assembly_get_image;
+static fn_image_get_name_t        g_image_get_name;
+static fn_class_from_name_t       g_class_from_name;
+static fn_class_get_field_t       g_class_get_field;
+static fn_field_get_offset_t      g_field_get_offset;
 static fn_class_get_static_data_t g_class_get_static_data;
-static fn_class_init_t          g_class_init;
+static fn_class_init_t            g_class_init;
 
 static size_t off_m_ShowPlayers     = 0;
 static size_t off_ShowEntity        = 0;
@@ -51,7 +67,7 @@ static void*  bm_static_data        = NULL;
     if (self) {
         self.backgroundColor = [UIColor clearColor];
         self.userInteractionEnabled = NO;
-        [NSTimer scheduledTimerWithTimeInterval:0.3 target:self selector:@selector(tick) userInfo:nil repeats:YES];
+        [NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(tick) userInfo:nil repeats:YES];
     }
     return self;
 }
@@ -59,10 +75,10 @@ static void*  bm_static_data        = NULL;
 - (void)tick {
     if (bm_static_data && off_m_ShowPlayers > 0) {
         void* bm = *(void* volatile*)bm_static_data;
-        if (bm && (uintptr_t)bm > 0x10000 && (uintptr_t)bm < 0x800000000ULL) {
-            *((uint8_t*)bm + off_m_ShowPlayers)     = 1;
-            if (off_ShowEntity > 0)        *((uint8_t*)bm + off_ShowEntity)         = 1;
-            if (off_m_LocalPlayerShow > 0) *((uint8_t*)bm + off_m_LocalPlayerShow) = 1;
+        if (bm && (uintptr_t)bm > 0x10000) {
+            safeWrite((uint8_t*)bm + off_m_ShowPlayers, 1);
+            if (off_ShowEntity > 0)        safeWrite((uint8_t*)bm + off_ShowEntity, 1);
+            if (off_m_LocalPlayerShow > 0) safeWrite((uint8_t*)bm + off_m_LocalPlayerShow, 1);
         }
     }
     [self setNeedsDisplay];
@@ -71,15 +87,14 @@ static void*  bm_static_data        = NULL;
 - (void)drawRect:(CGRect)rect {
     CGContextRef ctx = UIGraphicsGetCurrentContext();
     if (!ctx) return;
-    BOOL active = (bm_static_data && *(void**)bm_static_data);
+    BOOL active = (bm_static_data && off_m_ShowPlayers > 0 && *(void**)bm_static_data != NULL);
     UIColor* color = active ? [UIColor colorWithRed:0 green:1 blue:0 alpha:0.9]
-                            : [UIColor colorWithRed:1 green:0 blue:0 alpha:0.9];
+                            : [UIColor colorWithRed:1 green:0.5 blue:0 alpha:0.9];
     CGContextSetFillColorWithColor(ctx, color.CGColor);
     CGContextFillEllipseInRect(ctx, CGRectMake(5, 10, 16, 16));
     NSDictionary* attrs = @{NSForegroundColorAttributeName: color,
                             NSFontAttributeName: [UIFont boldSystemFontOfSize:11]};
-    NSString* label = active ? @"MAP ON" : @"MAP OFF";
-    [label drawAtPoint:CGPointMake(26, 10) withAttributes:attrs];
+    [@(active ? "MAP ON" : "LOADING") drawAtPoint:CGPointMake(26, 10) withAttributes:attrs];
 }
 
 @end
@@ -93,21 +108,20 @@ static BOOL loadIl2Cpp(void) {
     if (!uf_path) return NO;
     void* h = dlopen(uf_path, RTLD_LAZY | RTLD_NOLOAD);
     if (!h) return NO;
-
-    g_domain_get              = (fn_domain_get_t)dlsym(h, "il2cpp_domain_get");
-    g_domain_get_assemblies   = (fn_domain_get_assemblies_t)dlsym(h, "il2cpp_domain_get_assemblies");
-    g_assembly_get_image      = (fn_assembly_get_image_t)dlsym(h, "il2cpp_assembly_get_image");
-    g_image_get_name          = (fn_image_get_name_t)dlsym(h, "il2cpp_image_get_name");
-    g_class_from_name         = (fn_class_from_name_t)dlsym(h, "il2cpp_class_from_name");
-    g_class_get_field         = (fn_class_get_field_t)dlsym(h, "il2cpp_class_get_field_from_name");
-    g_field_get_offset        = (fn_field_get_offset_t)dlsym(h, "il2cpp_field_get_offset");
-    g_class_get_static_data   = (fn_class_get_static_data_t)dlsym(h, "il2cpp_class_get_static_field_data");
-    g_class_init              = (fn_class_init_t)dlsym(h, "il2cpp_class_init");
-
-    return (g_domain_get && g_class_from_name && g_class_get_field) ? YES : NO;
+    g_domain_get            = (fn_domain_get_t)dlsym(h, "il2cpp_domain_get");
+    g_domain_get_assemblies = (fn_domain_get_assemblies_t)dlsym(h, "il2cpp_domain_get_assemblies");
+    g_assembly_get_image    = (fn_assembly_get_image_t)dlsym(h, "il2cpp_assembly_get_image");
+    g_image_get_name        = (fn_image_get_name_t)dlsym(h, "il2cpp_image_get_name");
+    g_class_from_name       = (fn_class_from_name_t)dlsym(h, "il2cpp_class_from_name");
+    g_class_get_field       = (fn_class_get_field_t)dlsym(h, "il2cpp_class_get_field_from_name");
+    g_field_get_offset      = (fn_field_get_offset_t)dlsym(h, "il2cpp_field_get_offset");
+    g_class_get_static_data = (fn_class_get_static_data_t)dlsym(h, "il2cpp_class_get_static_field_data");
+    g_class_init            = (fn_class_init_t)dlsym(h, "il2cpp_class_init");
+    return (g_domain_get && g_class_from_name) ? YES : NO;
 }
 
 static void findOffsets(void) {
+    if (!g_domain_get) return;
     Il2CppDomain* domain = g_domain_get();
     if (!domain) return;
     size_t count = 0;
@@ -120,58 +134,42 @@ static void findOffsets(void) {
         const char* n = g_image_get_name(im);
         if (n && strcmp(n, "Assembly-CSharp.dll") == 0) { img = im; break; }
     }
-    if (!img) { NSLog(@"[MapHack] Assembly-CSharp not found"); return; }
+    if (!img) return;
     Il2CppClass* bm = g_class_from_name(img, "", "BattleManager");
-    if (!bm) { NSLog(@"[MapHack] BattleManager not found"); return; }
+    if (!bm) return;
     if (g_class_init) g_class_init(bm);
     if (g_class_get_static_data) bm_static_data = g_class_get_static_data(bm);
     FieldInfo* f;
     if ((f = g_class_get_field(bm, "m_ShowPlayers")))     off_m_ShowPlayers     = g_field_get_offset(f);
     if ((f = g_class_get_field(bm, "ShowEntity")))        off_ShowEntity        = g_field_get_offset(f);
     if ((f = g_class_get_field(bm, "m_LocalPlayerShow"))) off_m_LocalPlayerShow = g_field_get_offset(f);
-    NSLog(@"[MapHack] BM=%p ShowPlayers=0x%zx ShowEntity=0x%zx Local=0x%zx",
-          bm_static_data, off_m_ShowPlayers, off_ShowEntity, off_m_LocalPlayerShow);
 }
 
 static void startMapHack(void) {
-    if (!loadIl2Cpp()) { NSLog(@"[MapHack] il2cpp load failed"); return; }
-    // Add overlay immediately
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        UIWindow* win = nil;
-        for (UIScene* scene in [UIApplication sharedApplication].connectedScenes) {
-            if ([scene isKindOfClass:[UIWindowScene class]]) {
-                UIWindowScene* ws = (UIWindowScene*)scene;
-                for (UIWindow* w in ws.windows) {
-                    if (w.isKeyWindow) { win = w; break; }
-                }
+    if (!loadIl2Cpp()) return;
+    UIWindow* win = nil;
+    for (UIScene* scene in [UIApplication sharedApplication].connectedScenes) {
+        if ([scene isKindOfClass:[UIWindowScene class]]) {
+            for (UIWindow* w in ((UIWindowScene*)scene).windows) {
+                if (w.isKeyWindow) { win = w; break; }
             }
-            if (win) break;
         }
-        if (!win) win = [UIApplication sharedApplication].windows.firstObject;
-        if (!win) return;
-        MapHackView* v = [[MapHackView alloc] initWithFrame:CGRectMake(10, 60, 100, 36)];
+        if (win) break;
+    }
+    if (!win) win = [UIApplication sharedApplication].windows.firstObject;
+    if (win) {
+        MapHackView* v = [[MapHackView alloc] initWithFrame:CGRectMake(10, 60, 110, 36)];
         v.layer.zPosition = 9999;
         [win addSubview:v];
-        NSLog(@"[MapHack] Overlay added");
-    });
-    // Try to find BattleManager repeatedly
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        findOffsets();
-    });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        if (bm_static_data == NULL) findOffsets();
-    });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 40 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        if (bm_static_data == NULL) findOffsets();
-    });
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ findOffsets(); });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 25 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ if (!bm_static_data) findOffsets(); });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ if (!bm_static_data) findOffsets(); });
 }
 
 __attribute__((constructor))
 static void maphack_init(void) {
-    NSLog(@"[MapHack] Loaded");
-    CFRunLoopRef mainRL = CFRunLoopGetMain();
-    CFRunLoopPerformBlock(mainRL, kCFRunLoopCommonModes, ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         startMapHack();
     });
-    CFRunLoopWakeUp(mainRL);
 }
