@@ -57,12 +57,16 @@ static void*  bm_static_data        = NULL;
 }
 
 - (void)tick {
-    if (bm_static_data) {
+    if (bm_static_data && off_m_ShowPlayers > 0) {
         void* bm = *(void**)bm_static_data;
-        if (bm) {
-            if (off_m_ShowPlayers)     *((uint8_t*)bm + off_m_ShowPlayers)     = 1;
-            if (off_ShowEntity)        *((uint8_t*)bm + off_ShowEntity)         = 1;
-            if (off_m_LocalPlayerShow) *((uint8_t*)bm + off_m_LocalPlayerShow) = 1;
+        if (bm && (uintptr_t)bm > 0x1000) {
+            @try {
+                if (off_m_ShowPlayers)     *((uint8_t*)bm + off_m_ShowPlayers)     = 1;
+                if (off_ShowEntity)        *((uint8_t*)bm + off_ShowEntity)         = 1;
+                if (off_m_LocalPlayerShow) *((uint8_t*)bm + off_m_LocalPlayerShow) = 1;
+            } @catch (NSException* e) {
+                NSLog(@"[MapHack] Write exception: %@", e);
+            }
         }
     }
     [self setNeedsDisplay];
