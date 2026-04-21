@@ -9,7 +9,7 @@ workflows:
       - name: Build dylib
         script: |
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-          clang -arch arm64 -isysroot $SDK -miphoneos-version-min=14.0 -fobjc-arc -dynamiclib -framework UIKit -framework Foundation -framework CoreGraphics -o maphack.dylib mlbb_analysis/maphack_src/maphack.m
+          clang -arch arm64 -isysroot $SDK -miphoneos-version-min=14.0 -fobjc-arc -dynamiclib -framework UIKit -framework Foundation -o maphack.dylib mlbb_analysis/maphack_src/maphack_noui.m
           ls -lh maphack.dylib
     artifacts:
       - maphack.dylib
