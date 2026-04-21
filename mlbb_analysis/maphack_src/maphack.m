@@ -169,5 +169,9 @@ static void startMapHack(void) {
 __attribute__((constructor))
 static void maphack_init(void) {
     NSLog(@"[MapHack] Loaded");
-    dispatch_async(dispatch_get_main_queue(), ^{ startMapHack(); });
+    CFRunLoopRef mainRL = CFRunLoopGetMain();
+    CFRunLoopPerformBlock(mainRL, kCFRunLoopCommonModes, ^{
+        startMapHack();
+    });
+    CFRunLoopWakeUp(mainRL);
 }
