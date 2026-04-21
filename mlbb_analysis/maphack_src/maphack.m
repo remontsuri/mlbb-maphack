@@ -58,15 +58,11 @@ static void*  bm_static_data        = NULL;
 
 - (void)tick {
     if (bm_static_data && off_m_ShowPlayers > 0) {
-        void* bm = *(void**)bm_static_data;
-        if (bm && (uintptr_t)bm > 0x1000) {
-            @try {
-                if (off_m_ShowPlayers)     *((uint8_t*)bm + off_m_ShowPlayers)     = 1;
-                if (off_ShowEntity)        *((uint8_t*)bm + off_ShowEntity)         = 1;
-                if (off_m_LocalPlayerShow) *((uint8_t*)bm + off_m_LocalPlayerShow) = 1;
-            } @catch (NSException* e) {
-                NSLog(@"[MapHack] Write exception: %@", e);
-            }
+        void* bm = *(void* volatile*)bm_static_data;
+        if (bm && (uintptr_t)bm > 0x10000 && (uintptr_t)bm < 0x800000000ULL) {
+            *((uint8_t*)bm + off_m_ShowPlayers)     = 1;
+            if (off_ShowEntity > 0)        *((uint8_t*)bm + off_ShowEntity)         = 1;
+            if (off_m_LocalPlayerShow > 0) *((uint8_t*)bm + off_m_LocalPlayerShow) = 1;
         }
     }
     [self setNeedsDisplay];
@@ -139,8 +135,8 @@ static void findOffsets(void) {
 
 static void startMapHack(void) {
     if (!loadIl2Cpp()) { NSLog(@"[MapHack] il2cpp load failed"); return; }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 6 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        findOffsets();
+    // Add overlay immediately
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         UIWindow* win = nil;
         for (UIScene* scene in [UIApplication sharedApplication].connectedScenes) {
             if ([scene isKindOfClass:[UIWindowScene class]]) {
@@ -157,6 +153,16 @@ static void startMapHack(void) {
         v.layer.zPosition = 9999;
         [win addSubview:v];
         NSLog(@"[MapHack] Overlay added");
+    });
+    // Try to find BattleManager repeatedly
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        findOffsets();
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        if (bm_static_data == NULL) findOffsets();
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 40 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        if (bm_static_data == NULL) findOffsets();
     });
 }
 
