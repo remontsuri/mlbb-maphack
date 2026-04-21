@@ -95,10 +95,16 @@ static BOOL loadIl2Cpp(void) {
     if (!uf_path) return NO;
     void* h = dlopen(uf_path, RTLD_LAZY | RTLD_NOLOAD);
     if (!h) return NO;
-    #define L(fn) _##fn = (il2cpp_##fn##_t)dlsym(h, "il2cpp_"#fn); if (!_##fn) return NO;
-    L(domain_get) L(domain_get_assemblies) L(assembly_get_image) L(image_get_name)
-    L(class_from_name) L(class_get_field) L(field_get_offset)
-    L(class_get_static_data) L(class_init)
+    #define L(fn, sym) _##fn = (il2cpp_##fn##_t)dlsym(h, sym); if (!_##fn) return NO;
+    L(domain_get,              "il2cpp_domain_get")
+    L(domain_get_assemblies,   "il2cpp_domain_get_assemblies")
+    L(assembly_get_image,      "il2cpp_assembly_get_image")
+    L(image_get_name,          "il2cpp_image_get_name")
+    L(class_from_name,         "il2cpp_class_from_name")
+    L(class_get_field,         "il2cpp_class_get_field_from_name")
+    L(field_get_offset,        "il2cpp_field_get_offset")
+    L(class_get_static_data,   "il2cpp_class_get_static_field_data")
+    L(class_init,              "il2cpp_class_init")
     #undef L
     return YES;
 }
@@ -133,7 +139,17 @@ static void startMapHack(void) {
     if (!loadIl2Cpp()) { NSLog(@"[MapHack] il2cpp load failed"); return; }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 6 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         findOffsets();
-        UIWindow* win = [UIApplication sharedApplication].keyWindow;
+        UIWindow* win = nil;
+        for (UIScene* scene in [UIApplication sharedApplication].connectedScenes) {
+            if ([scene isKindOfClass:[UIWindowScene class]]) {
+                UIWindowScene* ws = (UIWindowScene*)scene;
+                for (UIWindow* w in ws.windows) {
+                    if (w.isKeyWindow) { win = w; break; }
+                }
+            }
+            if (win) break;
+        }
+        if (!win) win = [UIApplication sharedApplication].windows.firstObject;
         if (!win) return;
         MapHackView* v = [[MapHackView alloc] initWithFrame:CGRectMake(10, 60, 100, 36)];
         v.layer.zPosition = 9999;
