@@ -1,15 +1,15 @@
 workflows:
   build-maphack:
-    name: Build MLBB Map Hack v5 Minimal
+    name: Build MLBB Map Hack v6
     instance_type: mac_mini_m1
     max_build_duration: 10
     environment:
       xcode: latest
     scripts:
-      - name: Build dylib v5 minimal
+      - name: Build dylib v6
         script: |
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-          clang -arch arm64 -isysroot $SDK -miphoneos-version-min=14.0 -fobjc-arc -dynamiclib -framework Foundation -o maphack_v5.dylib mlbb_analysis/maphack_src/maphack_v5_minimal.m
-          ls -lh maphack_v5.dylib
+          clang -arch arm64 -isysroot $SDK -miphoneos-version-min=14.0 -fobjc-arc -dynamiclib -framework UIKit -framework Foundation -framework CoreGraphics -o maphack_v6.dylib mlbb_analysis/maphack_src/maphack_v6.m
+          ls -lh maphack_v6.dylib
     artifacts:
-      - maphack_v5.dylib
+      - maphack_v6.dylib
